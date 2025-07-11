@@ -42,13 +42,13 @@ The application is composed of two main parts: a React Native front-end and a na
 1. Clone the repository:
 
    ```bash
-   git clone https://github.com/your-username/my-call-detector-app.git
+   git clone https://github.com/atharvdange618/My-Call-Detector-App.git
    ```
 
 2. Install the dependencies:
 
    ```bash
-   cd my-call-detector-app
+   cd My-Call-Detector-App
    npm install
    ```
 
