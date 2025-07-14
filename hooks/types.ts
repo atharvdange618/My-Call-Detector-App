@@ -2,7 +2,7 @@ export type CallLogEntry = {
   number: string;
   type: number;
   duration: number;
-  date: number;
+  timestamp: number;
 };
 
 export type AnalyzedCall = {

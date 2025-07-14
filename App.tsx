@@ -591,7 +591,6 @@ export default function App() {
   );
 }
 
-// Styles remain the same as in original code
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,

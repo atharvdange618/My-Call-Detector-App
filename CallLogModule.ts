@@ -6,10 +6,11 @@ const { CallLogModule } = NativeModules;
 export const startMonitoring = () => CallLogModule.startMonitoring();
 export const stopMonitoring = () => CallLogModule.stopMonitoring();
 
+const emitter = new NativeEventEmitter(CallLogModule);
+
 export const subscribeToCallUpdates = (
   callback: (data: CallLogEntry) => void,
 ) => {
-  const emitter = new NativeEventEmitter(CallLogModule);
   const listener = emitter.addListener('CallLogUpdated', callback);
   return () => listener.remove();
 };

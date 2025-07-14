@@ -24,6 +24,6 @@ export function analyzeCallLogEntry(entry: CallLogEntry): AnalyzedCall | null {
     type,
     number: entry.number,
     duration: entry.duration,
-    timestamp: entry.date,
+    timestamp: entry.timestamp,
   };
 }

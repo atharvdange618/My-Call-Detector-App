@@ -11,7 +11,7 @@ export function usePermissions() {
       PermissionsAndroid.PERMISSIONS.READ_PHONE_STATE,
       PermissionsAndroid.PERMISSIONS.READ_PHONE_NUMBERS,
     ];
-    if (Platform.Version >= 33) {
+    if (Number(Platform.Version) >= 33) {
       perms.push(PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS);
     }
     try {
