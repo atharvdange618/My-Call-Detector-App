@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { analyzeCallLogEntry } from '../utils/CallLogAnalyzer';
 import { subscribeToCallUpdates } from '../CallLogModule';
+import { CallLogEntry } from './types';
 
 /**
  * Custom hook to monitor call logs using the native Android service.
@@ -18,6 +19,7 @@ export function useCallLogMonitor({ onCallDetected }: any) {
     // Subscribe to call updates from the native module.
     // The 'event' object directly contains the data sent from the native service via putExtra.
     const unsubscribe = subscribeToCallUpdates(event => {
+      console.log('Received raw event from native module:', event); // Added log
       try {
         const newCallData = {
           number: event.number,
@@ -48,23 +50,3 @@ export function useCallLogMonitor({ onCallDetected }: any) {
     };
   }, [onCallDetected]);
 }
-
-/**
- * Type definition for a raw call log entry from the native module.
- */
-export type CallLogEntry = {
-  number: string;
-  type: number;
-  date: number;
-  duration: number;
-};
-
-/**
- * Type definition for an analyzed call event.
- */
-export type AnalyzedCall = {
-  type: 'incoming' | 'outgoing' | 'missed' | 'rejected' | 'unknown';
-  number: string;
-  duration: number;
-  timestamp: number;
-};

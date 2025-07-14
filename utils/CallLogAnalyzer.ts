@@ -1,18 +1,6 @@
-export type CallLogEntry = {
-  number: string;
-  type: number;
-  date: number;
-  duration: number;
-};
+import { AnalyzedCall, CallLogEntry } from '../hooks/types';
 
-export type AnalyzedCall = {
-  type: 'incoming' | 'outgoing' | 'missed' | 'rejected' | 'unknown';
-  number: string;
-  duration: number;
-  timestamp: number;
-};
-
-export function analyzeCallLogEntry(entry: CallLogEntry): AnalyzedCall {
+export function analyzeCallLogEntry(entry: CallLogEntry): AnalyzedCall | null {
   let type: AnalyzedCall['type'] = 'unknown';
 
   switch (entry.type) {

@@ -75,6 +75,9 @@ object CallLogHelper {
         CallLog.Calls.REJECTED_TYPE -> "REJECTED"
         CallLog.Calls.BLOCKED_TYPE -> "BLOCKED"
         CallLog.Calls.VOICEMAIL_TYPE -> "VOICEMAIL"
-        else -> "UNKNOWN"
+        else -> {
+  Log.w("CallLogHelper", "Unknown call type: $type")
+  "UNKNOWN"
+}
     }
 }

@@ -7,6 +7,7 @@ import android.os.Build
 import android.os.IBinder
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL
 import java.util.*
 
 class CallLogMonitorService : Service() {
@@ -28,7 +29,12 @@ class CallLogMonitorService : Service() {
                 .setOngoing(true)
                 .build()
 
-            startForeground(101, notification)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+    startForeground(101, notification, FOREGROUND_SERVICE_TYPE_PHONE_CALL)
+} else {
+    startForeground(101, notification)
+}
+
             Log.d(TAG, "Foreground service started.")
         } catch (e: Exception) {
             Log.e(TAG, "Error starting foreground service: ${e.message}", e)
@@ -68,6 +74,8 @@ class CallLogMonitorService : Service() {
                             Log.d(TAG, "Sending broadcast: CALL_LOG_UPDATE")
                             sendBroadcast(intent)
                             Log.d(TAG, "Broadcast sent.")
+
+                            
                         } else {
                             Log.d(TAG, "No new call detected. Current lastTimestamp: $lastTimestamp")
                         }
@@ -91,6 +99,10 @@ class CallLogMonitorService : Service() {
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+    return START_STICKY
+}
 
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
