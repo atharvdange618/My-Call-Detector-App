@@ -20,25 +20,29 @@ class CallLogMonitorService : Service() {
         Log.d(TAG, "Service onCreate called.")
         createNotificationChannel()
 
-        val notification = NotificationCompat.Builder(this, "CallLogChannel")
-            .setSmallIcon(R.mipmap.ic_launcher_round)
-            .setContentTitle("Monitoring Call Logs")
-            .setContentText("Watching call history for changes...")
-            .setOngoing(true)
-            .build()
-
-        startForeground(101, notification)
-        Log.d(TAG, "Foreground service started.")
-
         try {
+            val notification = NotificationCompat.Builder(this, "CallLogChannel")
+                .setSmallIcon(R.mipmap.ic_launcher_round) // Ensure this icon exists
+                .setContentTitle("Monitoring Call Logs")
+                .setContentText("Watching call history for changes...")
+                .setOngoing(true)
+                .build()
+
+            startForeground(101, notification)
+            Log.d(TAG, "Foreground service started.")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error starting foreground service: ${e.message}", e)
+        }
+
+       try {
             lastTimestamp = CallLogHelper.getLastCall(this)?.timestamp ?: 0L
             Log.d(TAG, "Initial lastTimestamp: $lastTimestamp")
         } catch (e: IllegalArgumentException) {
             Log.e(TAG, "IllegalArgumentException when getting last call in onCreate: ${e.message}", e)
-            throw RuntimeException("Failed to initialize CallLogMonitorService due to call log error", e)
+        } catch (e: SecurityException) {
+            Log.e(TAG, "SecurityException: READ_CALL_LOG permission denied. Cannot access call log.", e)
         } catch (e: Exception) {
             Log.e(TAG, "Unexpected exception when getting last call in onCreate: ${e.message}", e)
-            throw RuntimeException("Failed to initialize CallLogMonitorService due to unexpected error", e)
         }
 
         timer.scheduleAtFixedRate(object : TimerTask() {
@@ -70,6 +74,8 @@ class CallLogMonitorService : Service() {
                     } ?: run {
                         Log.d(TAG, "No calls found in the log yet.")
                     }
+                } catch (e: SecurityException) {
+                    Log.e(TAG, "SecurityException in TimerTask: READ_CALL_LOG permission denied. Cannot access call log.", e)
                 } catch (e: Exception) {
                     Log.e(TAG, "Exception in TimerTask: ${e.message}", e)
                 }

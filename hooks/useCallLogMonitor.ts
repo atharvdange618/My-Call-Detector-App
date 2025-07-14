@@ -1,21 +1,20 @@
 import { useEffect, useRef } from 'react';
-import { Platform } from 'react-native';
 import { analyzeCallLogEntry } from '../utils/CallLogAnalyzer';
-import {
-  subscribeToCallUpdates,
-  startMonitoring,
-  stopMonitoring,
-} from '../CallLogModule';
+import { subscribeToCallUpdates } from '../CallLogModule';
 
 /**
  * Custom hook to monitor call logs using the native Android service.
+ * This hook is now solely responsible for managing the JavaScript side
+ * of event subscription and unsubscription. The native service lifecycle
+ * (start/stop) is managed by the parent component (App.tsx).
  * @param {object} props - The hook properties.
  * @param {function(AnalyzedCall): void} props.onCallDetected - Callback function when a new call is detected.
  */
 export function useCallLogMonitor({ onCallDetected }: any) {
-  const previousLogs = useRef([]);
+  const previousLogs = useRef<CallLogEntry[]>([]);
 
   useEffect(() => {
+    console.log('useCallLogMonitor useEffect: Subscribing to call updates...');
     // Subscribe to call updates from the native module.
     // The 'event' object directly contains the data sent from the native service via putExtra.
     const unsubscribe = subscribeToCallUpdates(event => {
@@ -41,20 +40,11 @@ export function useCallLogMonitor({ onCallDetected }: any) {
       }
     });
 
-    // Start the native monitoring service on Android.
-    if (Platform.OS === 'android') {
-      console.log('Attempting to start native CallLogModule monitoring...');
-      startMonitoring();
-    }
-
-    // Cleanup function: unsubscribe from updates and stop the native service.
     return () => {
-      console.log('Cleaning up useCallLogMonitor...');
+      console.log(
+        'useCallLogMonitor cleanup: Unsubscribing from call updates.',
+      );
       unsubscribe();
-      if (Platform.OS === 'android') {
-        console.log('Attempting to stop native CallLogModule monitoring...');
-        stopMonitoring();
-      }
     };
   }, [onCallDetected]);
 }
