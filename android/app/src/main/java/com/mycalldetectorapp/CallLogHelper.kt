@@ -10,7 +10,7 @@ import android.util.Log
  * @param number The phone number associated with the call.
  * @param type The type of call (e.g., incoming, outgoing, missed).
  * @param duration The duration of the call in seconds.
- * @param timestamp The timestamp of the call in milliseconds since epoch.
+ * @param timestamp The timestamp of the call in milliseconds.
  */
 data class CallEntry(
     val number: String,
@@ -39,9 +39,6 @@ object CallLogHelper {
         )
 
         // Query the Call Log content provider.
-        // Order by date descending. The 'LIMIT 1' has been removed from the orderBy string
-        // to avoid the IllegalArgumentException on systems that don't support it there.
-        // Take the first result from the cursor, which will be the latest call.
         val cursor: Cursor? = context.contentResolver.query(
             CallLog.Calls.CONTENT_URI, // The URI for the call log.
             projection,                // The columns to return.

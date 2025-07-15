@@ -23,26 +23,23 @@ class CallLogMonitorService : Service() {
 
         try {
             val notification = NotificationCompat.Builder(this, "CallLogChannel")
-                .setSmallIcon(R.mipmap.ic_launcher_round) // Ensure this icon exists
+                .setSmallIcon(R.mipmap.ic_launcher_round)
                 .setContentTitle("Monitoring Call Logs")
                 .setContentText("Watching call history for changes...")
                 .setOngoing(true)
                 .build()
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-    startForeground(101, notification, FOREGROUND_SERVICE_TYPE_PHONE_CALL)
-} else {
-    startForeground(101, notification)
-}
-
-            Log.d(TAG, "Foreground service started.")
+                startForeground(101, notification, FOREGROUND_SERVICE_TYPE_PHONE_CALL)
+            } else {
+                startForeground(101, notification)
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Error starting foreground service: ${e.message}", e)
         }
 
        try {
             lastTimestamp = CallLogHelper.getLastCall(this)?.timestamp ?: 0L
-            Log.d(TAG, "Initial lastTimestamp: $lastTimestamp")
         } catch (e: IllegalArgumentException) {
             Log.e(TAG, "IllegalArgumentException when getting last call in onCreate: ${e.message}", e)
         } catch (e: SecurityException) {
@@ -53,17 +50,12 @@ class CallLogMonitorService : Service() {
 
         timer.scheduleAtFixedRate(object : TimerTask() {
             override fun run() {
-                Log.d(TAG, "TimerTask run() started.")
                 try {
                     val latestCall = CallLogHelper.getLastCall(this@CallLogMonitorService)
-                    Log.d(TAG, "CallLogHelper.getLastCall() completed in TimerTask. Latest call: $latestCall")
-
                     latestCall?.let {
                         if (it.timestamp > lastTimestamp) {
-                            Log.d(TAG, "New call detected! Old timestamp: $lastTimestamp, New timestamp: ${it.timestamp}")
                             lastTimestamp = it.timestamp
                             val typeLabelForLog = CallLogHelper.getCallTypeLabel(it.type)
-                            Log.d(TAG, "Call details: Type=$typeLabelForLog, Number=${it.number}, Duration=${it.duration}s")
 
                             val intent = Intent("com.mycalldetectorapp.CALL_LOG_UPDATE")
                             intent.setPackage(applicationContext.packageName)
@@ -71,9 +63,7 @@ class CallLogMonitorService : Service() {
                             intent.putExtra("type", it.type)
                             intent.putExtra("duration", it.duration)
                             intent.putExtra("timestamp", it.timestamp)
-                            Log.d(TAG, "Sending broadcast: CALL_LOG_UPDATE")
                             sendBroadcast(intent)
-                            Log.d(TAG, "Broadcast sent.")
                         } else {
                             Log.d(TAG, "No new call detected. Current lastTimestamp: $lastTimestamp")
                         }
@@ -87,13 +77,11 @@ class CallLogMonitorService : Service() {
                 }
             }
         }, 0, 5000) // Poll every 5 seconds
-        Log.d(TAG, "TimerTask scheduled.")
     }
 
     override fun onDestroy() {
         super.onDestroy()
         timer.cancel()
-        Log.d(TAG, "Service onDestroy called. Timer cancelled.")
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -111,7 +99,6 @@ class CallLogMonitorService : Service() {
             )
             val manager = getSystemService(NotificationManager::class.java)
             manager.createNotificationChannel(serviceChannel)
-            Log.d(TAG, "Notification channel created.")
         }
     }
 }

@@ -22,10 +22,8 @@ export function useCallLogMonitor({ onCallDetected }: any) {
         typeof entry.duration !== 'number' ||
         typeof entry.timestamp !== 'number'
       ) {
-        console.warn('Malformed call log entry from native:', entry);
         return;
       }
-      console.log('Received raw event from native module:', entry);
       try {
         const newCallData = {
           number: entry.number,
@@ -41,7 +39,6 @@ export function useCallLogMonitor({ onCallDetected }: any) {
               log.number === newCallData.number,
           )
         ) {
-          console.log('Duplicate call entry ignored:', newCallData);
           return;
         }
 
@@ -62,17 +59,11 @@ export function useCallLogMonitor({ onCallDetected }: any) {
   );
 
   useEffect(() => {
-    console.log('useCallLogMonitor useEffect: Subscribing to call updates...');
-    // Subscribe to call updates from the native module.
-    // The 'event' object directly contains the data sent from the native service via putExtra.
     const unsubscribe = subscribeToCallUpdates(entry => {
       processCallLogEntry(entry);
     });
 
     return () => {
-      console.log(
-        'useCallLogMonitor cleanup: Unsubscribing from call updates.',
-      );
       unsubscribe();
     };
   }, [onCallDetected, processCallLogEntry]);

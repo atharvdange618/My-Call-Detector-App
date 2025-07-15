@@ -17,7 +17,7 @@ import {
   StatusBar,
   AppStateStatus,
   AppState,
-  Platform, // Import Platform
+  Platform,
   Linking,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -25,17 +25,16 @@ import { useCallLogMonitor } from './hooks/useCallLogMonitor';
 import { startMonitoring, stopMonitoring } from './CallLogModule';
 import { AnalyzedCall } from './hooks/types';
 
-import notifee, {
-  AndroidImportance,
-  AndroidCategory,
-  EventType,
-} from '@notifee/react-native';
+import notifee, { EventType } from '@notifee/react-native';
 import { usePermissions } from './hooks/usePermissions';
+import { openWhatsApp } from './utils/OpenWhatsApp';
+import {
+  createNotificationChannel,
+  displayClientCheckNotification,
+} from './utils/Notification';
 
-const CALL_HISTORY_STORAGE_KEY = '@CallDetectorApp:callHistory';
-const CHANNEL_ID = 'call_monitor_channel';
+export const CALL_HISTORY_STORAGE_KEY = '@CallDetectorApp:callHistory';
 
-// Enhanced types for better type safety
 interface CompleteAppState {
   callHistory: AnalyzedCall[];
   isMonitoring: boolean;
@@ -48,117 +47,6 @@ interface PermissionState {
   status: PermissionStatusType;
   message: string;
 }
-
-const openWhatsApp = async (
-  number: string,
-  templateMessage: string,
-): Promise<void> => {
-  const url = `whatsapp://send?phone=${number}&text=${encodeURIComponent(
-    templateMessage,
-  )}`;
-  try {
-    const supported = await Linking.canOpenURL(url);
-    if (supported) {
-      await Linking.openURL(url);
-    } else {
-      console.log(
-        'WhatsApp is not installed on this device. Opening web link.',
-      );
-      await Linking.openURL(
-        `https://wa.me/${number}?text=${encodeURIComponent(templateMessage)}`,
-      );
-    }
-  } catch (error) {
-    console.error('An error occurred while trying to open WhatsApp:', error);
-  }
-};
-
-// --- Notifee Notification Functions ---
-async function createNotificationChannel() {
-  await notifee.createChannel({
-    id: CHANNEL_ID,
-    name: 'Call Monitor Notifications',
-    importance: AndroidImportance.HIGH,
-    sound: 'default',
-    vibration: true,
-    category: AndroidCategory.CALL,
-  });
-}
-
-// Function to display the "Client Check" notification
-async function displayClientCheckNotification(call: AnalyzedCall) {
-  const notificationId = `client_check_${call.timestamp}`;
-  await notifee.displayNotification({
-    id: notificationId,
-    title: '📞 Recent Call Processed',
-    body: `Was the person at ${call.number} a client?`,
-    data: {
-      callData: JSON.stringify(call),
-      notificationStage: 'clientCheck',
-    },
-    android: {
-      channelId: CHANNEL_ID,
-      autoCancel: false,
-      pressAction: {
-        id: 'default',
-        launchActivity: 'default',
-      },
-      actions: [
-        {
-          title: '✅ Yes',
-          pressAction: {
-            id: 'yes_client',
-          },
-        },
-        {
-          title: '❌ No',
-          pressAction: {
-            id: 'no_client',
-          },
-        },
-      ],
-    },
-  });
-  return notificationId;
-}
-
-// Function to display the "Send Message" notification
-async function displayMessagePromptNotification(call: AnalyzedCall) {
-  const notificationId = `message_prompt_${call.timestamp}`;
-  await notifee.displayNotification({
-    id: notificationId,
-    title: '💬 Send Template Message?',
-    body: `Do you want to send a template message to ${call.number}?`,
-    data: {
-      callData: JSON.stringify(call),
-      notificationStage: 'messagePrompt',
-    },
-    android: {
-      channelId: CHANNEL_ID,
-      autoCancel: false,
-      pressAction: {
-        id: 'default',
-        launchActivity: 'default',
-      },
-      actions: [
-        {
-          title: '✅ Yes, Send',
-          pressAction: {
-            id: 'yes_send_message',
-          },
-        },
-        {
-          title: '❌ No',
-          pressAction: {
-            id: 'no_send_message',
-          },
-        },
-      ],
-    },
-  });
-  return notificationId;
-}
-// --- End Notifee Notification Functions ---
 
 export default function App() {
   const [appState, setAppState] = useState<CompleteAppState>({
@@ -209,7 +97,6 @@ export default function App() {
 
   const addCallToHistory = useCallback((call: AnalyzedCall) => {
     setAppState(prev => {
-      // Check if a call with the same timestamp and number already exists
       const isDuplicate = prev.callHistory.some(
         existingCall =>
           existingCall.timestamp === call.timestamp &&
@@ -217,8 +104,7 @@ export default function App() {
       );
 
       if (isDuplicate) {
-        console.log('Duplicate call detected, not adding to history:', call);
-        return prev; // Return previous state if duplicate
+        return prev;
       }
 
       return {
@@ -235,7 +121,6 @@ export default function App() {
     }));
   }, []);
 
-  // Load call history with better error handling
   const loadCallHistory = useCallback(async () => {
     try {
       updateAppState({ isLoadingHistory: true });
@@ -245,22 +130,17 @@ export default function App() {
 
       if (storedHistory) {
         const parsedHistory = JSON.parse(storedHistory);
-        // Validate the parsed data
         if (Array.isArray(parsedHistory)) {
           updateAppState({ callHistory: parsedHistory });
-        } else {
-          console.warn('Invalid call history format in AsyncStorage');
         }
       }
     } catch (error) {
-      console.error('Failed to load call history from AsyncStorage:', error);
       Alert.alert('Error', 'Failed to load call history. Starting fresh.');
     } finally {
       updateAppState({ isLoadingHistory: false });
     }
   }, [updateAppState]);
 
-  // Save call history with debouncing
   const saveCallHistory = useCallback(async (history: AnalyzedCall[]) => {
     try {
       await AsyncStorage.setItem(
@@ -272,7 +152,6 @@ export default function App() {
     }
   }, []);
 
-  // Debounced save effect
   useEffect(() => {
     if (!appState.isLoadingHistory && appState.callHistory.length >= 0) {
       const timeoutId = setTimeout(() => {
@@ -289,14 +168,13 @@ export default function App() {
       message: 'Requesting permissions...',
     });
 
-    const granted = await requestCorePermissions(); // Use the new hook's request method
+    const granted = await requestCorePermissions();
 
     if (granted) {
       updatePermissionState({
         status: 'granted',
         message: 'Permissions granted. Ready to monitor calls.',
       });
-      // Ensure notification channel is created only if all needed permissions are granted
       if (Platform.OS === 'android') {
         await createNotificationChannel();
       }
@@ -315,7 +193,6 @@ export default function App() {
     }
   }, [requestCorePermissions, updatePermissionState]);
 
-  // Monitoring controls with better error handling
   const handleStartMonitoring = useCallback(async () => {
     try {
       updateAppState({ isMonitoring: true });
@@ -323,7 +200,6 @@ export default function App() {
       const granted = await handlePermissionRequest();
       if (granted) {
         startMonitoring();
-        Alert.alert('Monitoring Started', 'Call log monitoring has begun.');
       } else {
         updateAppState({ isMonitoring: false });
         Alert.alert(
@@ -332,7 +208,6 @@ export default function App() {
         );
       }
     } catch (error) {
-      console.error('Error during start monitoring:', error);
       updateAppState({ isMonitoring: false });
       updatePermissionState({
         status: 'error',
@@ -353,7 +228,6 @@ export default function App() {
     }
   }, [updateAppState]);
 
-  // Clear history with confirmation
   const handleClearHistory = useCallback(async () => {
     Alert.alert(
       'Clear History',
@@ -372,7 +246,6 @@ export default function App() {
                 'All call history has been removed.',
               );
             } catch (error) {
-              console.error('Failed to clear call history:', error);
               Alert.alert('Error', 'Failed to clear history.');
             }
           },
@@ -381,26 +254,21 @@ export default function App() {
     );
   }, [clearCallHistory]);
 
-  // App state change handling
   useEffect(() => {
     const handleAppStateChange = async (nextAppState: AppStateStatus) => {
       if (
         appStateRef.current.match(/inactive|background/) &&
         nextAppState === 'active'
       ) {
-        console.log('App has come to foreground, re-checking permissions...');
-        // Request permissions and update internal state
         const granted = await handlePermissionRequest();
 
         if (granted) {
           if (!appState.isMonitoring) {
-            // Only start if not already monitoring
             updateAppState({ isMonitoring: true });
             startMonitoring();
           }
         } else {
           if (appState.isMonitoring) {
-            // If permissions were lost while monitoring
             stopMonitoring();
             updateAppState({ isMonitoring: false });
           }
@@ -431,7 +299,7 @@ export default function App() {
         });
         break;
       case 'pending':
-      default: // 'pending' covers initial state or during request
+      default:
         updatePermissionState({
           status: 'checking',
           message: 'Checking permissions...',
@@ -440,7 +308,6 @@ export default function App() {
     }
   }, [corePermissionStatus, updatePermissionState]);
 
-  // Initial app setup
   useEffect(() => {
     if (!isInitializedRef.current) {
       isInitializedRef.current = true;
@@ -448,7 +315,6 @@ export default function App() {
     }
   }, [loadCallHistory]);
 
-  // Auto-start monitoring on app launch if permissions are granted
   useEffect(() => {
     const initializeMonitoringOnLoad = async () => {
       if (!appState.isLoadingHistory) {
@@ -478,7 +344,6 @@ export default function App() {
     appState.isMonitoring,
   ]);
 
-  // Cleanup on unmount
   useEffect(() => {
     return () => {
       if (appState.isMonitoring) {
@@ -491,11 +356,9 @@ export default function App() {
     };
   }, [appState.isMonitoring]);
 
-  // Call detection handling
   useCallLogMonitor({
     onCallDetected: useCallback(
       async (event: AnalyzedCall) => {
-        console.log('📞 Detected new call event:', event);
         if (corePermissionStatus === 'granted') {
           await displayClientCheckNotification(event);
         } else {
@@ -508,7 +371,6 @@ export default function App() {
     ),
   });
 
-  // Notifee event listener for foreground interactions
   useEffect(() => {
     const unsubscribe = notifee.onForegroundEvent(async ({ type, detail }) => {
       const { notification, pressAction } = detail;
@@ -524,65 +386,29 @@ export default function App() {
       const call: AnalyzedCall = JSON.parse(callDataString);
 
       switch (type) {
-        case EventType.PRESS: // User pressed the notification body
-          console.log('User pressed notification:', notification.id);
-          // If they press the body, dismiss and do nothing specific for now
-          // Could open the app to a specific screen if needed.
+        case EventType.PRESS:
           await notifee.cancelNotification(notification.id);
           break;
 
         case EventType.ACTION_PRESS:
-          console.log(
-            `Action pressed: ${pressAction.id} on notification ${notification.id}`,
-          );
-
           switch (pressAction.id) {
-            case 'yes_client':
-              await addCallToHistory(call);
-              console.log(
-                `✅ User chose YES (client check), call stored: ${call.number}`,
-              );
-              // Dismiss the first notification and show the second
-              await notifee.cancelNotification(notification.id);
-              await displayMessagePromptNotification(call);
-              break;
-
             case 'no_client':
               console.log(
                 `❌ User chose NO (client check), call will NOT be stored for: ${call.number}`,
               );
-              // Dismiss the notification
               await notifee.cancelNotification(notification.id);
-              // Log to history that it was not a client
-              addCallToHistory({
-                ...call,
-              }); // Add a flag for internal logging/tracking
               break;
 
             case 'yes_send_message':
               console.log(
                 `✅ User chose YES (message prompt), opening WhatsApp for: ${call.number}`,
               );
+              await addCallToHistory(call);
               await openWhatsApp(
                 call.number,
                 'Hello! We recently had a call. How can I help you today?',
               );
-              // Dismiss the notification after opening WhatsApp
               await notifee.cancelNotification(notification.id);
-              addCallToHistory({
-                ...call,
-              }); // Update history
-              break;
-
-            case 'no_send_message':
-              console.log(
-                `❌ User chose NO (message prompt), not sending message for: ${call.number}`,
-              );
-              // Dismiss the notification
-              await notifee.cancelNotification(notification.id);
-              addCallToHistory({
-                ...call,
-              }); // Update history
               break;
 
             default:
@@ -593,10 +419,9 @@ export default function App() {
       }
     });
 
-    return () => unsubscribe(); // Cleanup listener on unmount
+    return () => unsubscribe();
   }, [addCallToHistory]);
 
-  // Utility functions
   const formatTimestamp = useCallback((timestamp: number) => {
     if (!timestamp) return 'N/A';
     const date = new Date(timestamp);
@@ -608,7 +433,7 @@ export default function App() {
       case 'incoming':
         return '📞';
       case 'outgoing':
-      case 'dialed': // Added 'dialed' as it's common for outgoing
+      case 'dialed':
         return '📲';
       case 'missed':
         return '❌';
