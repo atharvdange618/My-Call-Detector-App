@@ -17,25 +17,29 @@ import {
   StatusBar,
   AppStateStatus,
   AppState,
+  Platform, // Import Platform
+  Linking,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useCallLogMonitor } from './hooks/useCallLogMonitor';
-import { requestAllPermissions } from './utils/Permissions';
 import { startMonitoring, stopMonitoring } from './CallLogModule';
-import { CallPopup, Stage } from './components/CallPopup';
 import { AnalyzedCall } from './hooks/types';
 
+import notifee, {
+  AndroidImportance,
+  AndroidCategory,
+  EventType,
+} from '@notifee/react-native';
+import { usePermissions } from './hooks/usePermissions';
+
 const CALL_HISTORY_STORAGE_KEY = '@CallDetectorApp:callHistory';
+const CHANNEL_ID = 'call_monitor_channel';
 
 // Enhanced types for better type safety
 interface CompleteAppState {
   callHistory: AnalyzedCall[];
-  permissionStatus: string;
   isMonitoring: boolean;
   isLoadingHistory: boolean;
-  popupVisible: boolean;
-  popupStage: Stage;
-  currentCall: AnalyzedCall | null;
 }
 
 type PermissionStatusType = 'granted' | 'denied' | 'checking' | 'error';
@@ -45,29 +49,135 @@ interface PermissionState {
   message: string;
 }
 
+const openWhatsApp = async (
+  number: string,
+  templateMessage: string,
+): Promise<void> => {
+  const url = `whatsapp://send?phone=${number}&text=${encodeURIComponent(
+    templateMessage,
+  )}`;
+  try {
+    const supported = await Linking.canOpenURL(url);
+    if (supported) {
+      await Linking.openURL(url);
+    } else {
+      console.log(
+        'WhatsApp is not installed on this device. Opening web link.',
+      );
+      await Linking.openURL(
+        `https://wa.me/${number}?text=${encodeURIComponent(templateMessage)}`,
+      );
+    }
+  } catch (error) {
+    console.error('An error occurred while trying to open WhatsApp:', error);
+  }
+};
+
+// --- Notifee Notification Functions ---
+async function createNotificationChannel() {
+  await notifee.createChannel({
+    id: CHANNEL_ID,
+    name: 'Call Monitor Notifications',
+    importance: AndroidImportance.HIGH,
+    sound: 'default',
+    vibration: true,
+    category: AndroidCategory.CALL,
+  });
+}
+
+// Function to display the "Client Check" notification
+async function displayClientCheckNotification(call: AnalyzedCall) {
+  const notificationId = `client_check_${call.timestamp}`;
+  await notifee.displayNotification({
+    id: notificationId,
+    title: '📞 Recent Call Processed',
+    body: `Was the person at ${call.number} a client?`,
+    data: {
+      callData: JSON.stringify(call),
+      notificationStage: 'clientCheck',
+    },
+    android: {
+      channelId: CHANNEL_ID,
+      autoCancel: false,
+      pressAction: {
+        id: 'default',
+        launchActivity: 'default',
+      },
+      actions: [
+        {
+          title: '✅ Yes',
+          pressAction: {
+            id: 'yes_client',
+          },
+        },
+        {
+          title: '❌ No',
+          pressAction: {
+            id: 'no_client',
+          },
+        },
+      ],
+    },
+  });
+  return notificationId;
+}
+
+// Function to display the "Send Message" notification
+async function displayMessagePromptNotification(call: AnalyzedCall) {
+  const notificationId = `message_prompt_${call.timestamp}`;
+  await notifee.displayNotification({
+    id: notificationId,
+    title: '💬 Send Template Message?',
+    body: `Do you want to send a template message to ${call.number}?`,
+    data: {
+      callData: JSON.stringify(call),
+      notificationStage: 'messagePrompt',
+    },
+    android: {
+      channelId: CHANNEL_ID,
+      autoCancel: false,
+      pressAction: {
+        id: 'default',
+        launchActivity: 'default',
+      },
+      actions: [
+        {
+          title: '✅ Yes, Send',
+          pressAction: {
+            id: 'yes_send_message',
+          },
+        },
+        {
+          title: '❌ No',
+          pressAction: {
+            id: 'no_send_message',
+          },
+        },
+      ],
+    },
+  });
+  return notificationId;
+}
+// --- End Notifee Notification Functions ---
+
 export default function App() {
-  // Consolidated state management
   const [appState, setAppState] = useState<CompleteAppState>({
     callHistory: [],
-    permissionStatus: 'Checking permissions...',
     isMonitoring: false,
     isLoadingHistory: true,
-    popupVisible: false,
-    popupStage: 'clientCheck',
-    currentCall: null,
   });
 
-  // Separate permission state for better control
+  const { status: corePermissionStatus, request: requestCorePermissions } =
+    usePermissions();
+
   const [permissionState, setPermissionState] = useState<PermissionState>({
     status: 'checking',
     message: 'Checking permissions...',
   });
 
-  // Refs for cleanup and app state monitoring
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
   const isInitializedRef = useRef(false);
 
-  // Memoized values to prevent unnecessary re-renders
   const statusColor = useMemo(() => {
     if (
       permissionState.status === 'denied' ||
@@ -86,7 +196,6 @@ export default function App() {
     [appState.callHistory.length],
   );
 
-  // Optimized state update functions
   const updateAppState = useCallback((updates: Partial<CompleteAppState>) => {
     setAppState(prev => ({ ...prev, ...updates }));
   }, []);
@@ -98,7 +207,6 @@ export default function App() {
     [],
   );
 
-  // Optimized call history operations
   const addCallToHistory = useCallback((call: AnalyzedCall) => {
     setAppState(prev => {
       // Check if a call with the same timestamp and number already exists
@@ -175,45 +283,44 @@ export default function App() {
     }
   }, [appState.callHistory, appState.isLoadingHistory, saveCallHistory]);
 
-  // Permission management with better error handling
-  const requestPermissions = useCallback(async (): Promise<boolean> => {
-    try {
+  const handlePermissionRequest = useCallback(async (): Promise<boolean> => {
+    updatePermissionState({
+      status: 'checking',
+      message: 'Requesting permissions...',
+    });
+
+    const granted = await requestCorePermissions(); // Use the new hook's request method
+
+    if (granted) {
       updatePermissionState({
-        status: 'checking',
-        message: 'Requesting permissions...',
+        status: 'granted',
+        message: 'Permissions granted. Ready to monitor calls.',
       });
-
-      const granted = await requestAllPermissions();
-
-      if (granted) {
-        updatePermissionState({
-          status: 'granted',
-          message: 'Permissions granted. Ready to monitor calls.',
-        });
-        return true;
-      } else {
-        updatePermissionState({
-          status: 'denied',
-          message: 'Permission denied. App needs call log access.',
-        });
-        return false;
+      // Ensure notification channel is created only if all needed permissions are granted
+      if (Platform.OS === 'android') {
+        await createNotificationChannel();
       }
-    } catch (error) {
-      console.error('Error requesting permissions:', error);
+      return true;
+    } else {
       updatePermissionState({
-        status: 'error',
-        message: 'Error requesting permissions. Please try again.',
+        status: 'denied',
+        message: 'Required permissions denied. Please enable them in settings.',
       });
+      Alert.alert(
+        'Permissions Required',
+        'Please grant all necessary permissions in app settings to use this feature.',
+        [{ text: 'Go to Settings', onPress: () => Linking.openSettings() }],
+      );
       return false;
     }
-  }, [updatePermissionState]);
+  }, [requestCorePermissions, updatePermissionState]);
 
   // Monitoring controls with better error handling
   const handleStartMonitoring = useCallback(async () => {
     try {
       updateAppState({ isMonitoring: true });
 
-      const granted = await requestPermissions();
+      const granted = await handlePermissionRequest();
       if (granted) {
         startMonitoring();
         Alert.alert('Monitoring Started', 'Call log monitoring has begun.');
@@ -233,22 +340,18 @@ export default function App() {
       });
       Alert.alert('Error', 'Failed to start monitoring. Please try again.');
     }
-  }, [updateAppState, requestPermissions, updatePermissionState]);
+  }, [updateAppState, handlePermissionRequest, updatePermissionState]);
 
   const handleStopMonitoring = useCallback(() => {
     try {
       stopMonitoring();
       updateAppState({ isMonitoring: false });
-      updatePermissionState({
-        status: 'granted',
-        message: 'Monitoring stopped.',
-      });
       Alert.alert('Monitoring Stopped', 'Call log monitoring has been paused.');
     } catch (error) {
       console.error('Error during stop monitoring:', error);
       Alert.alert('Error', 'Failed to stop monitoring. Check logs.');
     }
-  }, [updateAppState, updatePermissionState]);
+  }, [updateAppState]);
 
   // Clear history with confirmation
   const handleClearHistory = useCallback(async () => {
@@ -280,14 +383,28 @@ export default function App() {
 
   // App state change handling
   useEffect(() => {
-    const handleAppStateChange = (nextAppState: AppStateStatus) => {
+    const handleAppStateChange = async (nextAppState: AppStateStatus) => {
       if (
         appStateRef.current.match(/inactive|background/) &&
         nextAppState === 'active'
       ) {
-        // App has come to foreground
-        console.log('App has come to foreground');
-        // Could refresh permissions or restart monitoring if needed
+        console.log('App has come to foreground, re-checking permissions...');
+        // Request permissions and update internal state
+        const granted = await handlePermissionRequest();
+
+        if (granted) {
+          if (!appState.isMonitoring) {
+            // Only start if not already monitoring
+            updateAppState({ isMonitoring: true });
+            startMonitoring();
+          }
+        } else {
+          if (appState.isMonitoring) {
+            // If permissions were lost while monitoring
+            stopMonitoring();
+            updateAppState({ isMonitoring: false });
+          }
+        }
       }
       appStateRef.current = nextAppState;
     };
@@ -297,7 +414,31 @@ export default function App() {
       handleAppStateChange,
     );
     return () => subscription?.remove();
-  }, []);
+  }, [handlePermissionRequest, appState.isMonitoring, updateAppState]);
+
+  useEffect(() => {
+    switch (corePermissionStatus) {
+      case 'granted':
+        updatePermissionState({
+          status: 'granted',
+          message: 'All permissions granted.',
+        });
+        break;
+      case 'denied':
+        updatePermissionState({
+          status: 'denied',
+          message: 'Required permissions denied.',
+        });
+        break;
+      case 'pending':
+      default: // 'pending' covers initial state or during request
+        updatePermissionState({
+          status: 'checking',
+          message: 'Checking permissions...',
+        });
+        break;
+    }
+  }, [corePermissionStatus, updatePermissionState]);
 
   // Initial app setup
   useEffect(() => {
@@ -309,18 +450,33 @@ export default function App() {
 
   // Auto-start monitoring on app launch if permissions are granted
   useEffect(() => {
-    const initializeApp = async () => {
-      if (isInitializedRef.current && !appState.isLoadingHistory) {
-        const granted = await requestPermissions();
-        if (granted) {
-          updateAppState({ isMonitoring: true });
-          startMonitoring();
+    const initializeMonitoringOnLoad = async () => {
+      if (!appState.isLoadingHistory) {
+        if (corePermissionStatus === 'granted') {
+          if (!appState.isMonitoring) {
+            updateAppState({ isMonitoring: true });
+            startMonitoring();
+          }
+        } else if (corePermissionStatus === 'denied') {
+          if (appState.isMonitoring) {
+            stopMonitoring();
+            updateAppState({ isMonitoring: false });
+          }
+          Alert.alert(
+            'Permissions Needed',
+            'Please grant permissions to enable call monitoring.',
+          );
         }
       }
     };
-
-    initializeApp();
-  }, [appState.isLoadingHistory, requestPermissions, updateAppState]);
+    const timeoutId = setTimeout(initializeMonitoringOnLoad, 100);
+    return () => clearTimeout(timeoutId);
+  }, [
+    appState.isLoadingHistory,
+    corePermissionStatus,
+    updateAppState,
+    appState.isMonitoring,
+  ]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -338,59 +494,107 @@ export default function App() {
   // Call detection handling
   useCallLogMonitor({
     onCallDetected: useCallback(
-      (event: AnalyzedCall) => {
+      async (event: AnalyzedCall) => {
         console.log('📞 Detected new call event:', event);
-        updateAppState({
-          currentCall: event,
-          popupStage: 'clientCheck',
-          popupVisible: true,
-        });
+        if (corePermissionStatus === 'granted') {
+          await displayClientCheckNotification(event);
+        } else {
+          console.warn(
+            'Skipping notification display: Permissions not granted.',
+          );
+        }
       },
-      [updateAppState],
+      [corePermissionStatus],
     ),
   });
 
-  // Popup handling
-  const handlePopupYes = useCallback(() => {
-    if (!appState.currentCall) {
-      console.warn('handlePopupYes called but no currentCall found.');
-      return;
-    }
+  // Notifee event listener for foreground interactions
+  useEffect(() => {
+    const unsubscribe = notifee.onForegroundEvent(async ({ type, detail }) => {
+      const { notification, pressAction } = detail;
 
-    if (appState.popupStage === 'clientCheck') {
-      // User confirmed client, add to history and proceed to message prompt
-      addCallToHistory(appState.currentCall);
-      console.log(
-        `✅ User chose YES (client check), call stored: ${appState.currentCall.number}`,
-      );
-      updateAppState({ popupStage: 'messagePrompt' });
-    } else if (appState.popupStage === 'messagePrompt') {
-      // User confirmed sending message, dismiss popup (WhatsApp handled by CallPopup)
-      console.log(
-        `✅ User chose YES (message prompt), dismissing popup for: ${appState.currentCall.number}`,
-      );
-      updateAppState({
-        popupVisible: false,
-        currentCall: null,
-        popupStage: 'clientCheck',
-      });
-    }
-  }, [
-    appState.currentCall,
-    appState.popupStage,
-    addCallToHistory,
-    updateAppState,
-  ]);
+      if (!notification || !pressAction) return;
 
-  const handlePopupNo = useCallback(() => {
-    // On NO, simply dismiss the popup and do NOT store the call
-    console.log('User chose NO, call will NOT be stored.');
-    updateAppState({
-      popupVisible: false,
-      currentCall: null,
-      popupStage: 'clientCheck',
+      const callDataString = notification.data?.callData as string;
+
+      if (!callDataString) {
+        console.warn('No callData found in notification payload.');
+        return;
+      }
+      const call: AnalyzedCall = JSON.parse(callDataString);
+
+      switch (type) {
+        case EventType.PRESS: // User pressed the notification body
+          console.log('User pressed notification:', notification.id);
+          // If they press the body, dismiss and do nothing specific for now
+          // Could open the app to a specific screen if needed.
+          await notifee.cancelNotification(notification.id);
+          break;
+
+        case EventType.ACTION_PRESS:
+          console.log(
+            `Action pressed: ${pressAction.id} on notification ${notification.id}`,
+          );
+
+          switch (pressAction.id) {
+            case 'yes_client':
+              await addCallToHistory(call);
+              console.log(
+                `✅ User chose YES (client check), call stored: ${call.number}`,
+              );
+              // Dismiss the first notification and show the second
+              await notifee.cancelNotification(notification.id);
+              await displayMessagePromptNotification(call);
+              break;
+
+            case 'no_client':
+              console.log(
+                `❌ User chose NO (client check), call will NOT be stored for: ${call.number}`,
+              );
+              // Dismiss the notification
+              await notifee.cancelNotification(notification.id);
+              // Log to history that it was not a client
+              addCallToHistory({
+                ...call,
+              }); // Add a flag for internal logging/tracking
+              break;
+
+            case 'yes_send_message':
+              console.log(
+                `✅ User chose YES (message prompt), opening WhatsApp for: ${call.number}`,
+              );
+              await openWhatsApp(
+                call.number,
+                'Hello! We recently had a call. How can I help you today?',
+              );
+              // Dismiss the notification after opening WhatsApp
+              await notifee.cancelNotification(notification.id);
+              addCallToHistory({
+                ...call,
+              }); // Update history
+              break;
+
+            case 'no_send_message':
+              console.log(
+                `❌ User chose NO (message prompt), not sending message for: ${call.number}`,
+              );
+              // Dismiss the notification
+              await notifee.cancelNotification(notification.id);
+              addCallToHistory({
+                ...call,
+              }); // Update history
+              break;
+
+            default:
+              console.log(`Unknown action ID: ${pressAction.id}`);
+              break;
+          }
+          break;
+      }
     });
-  }, [updateAppState]);
+
+    return () => unsubscribe(); // Cleanup listener on unmount
+  }, [addCallToHistory]);
 
   // Utility functions
   const formatTimestamp = useCallback((timestamp: number) => {
@@ -576,17 +780,6 @@ export default function App() {
           )}
         </View>
       </ScrollView>
-
-      {appState.currentCall && (
-        <CallPopup
-          visible={appState.popupVisible}
-          stage={appState.popupStage}
-          number={appState.currentCall.number}
-          onYes={handlePopupYes}
-          onNo={handlePopupNo}
-          templateMessage="Hello! We recently had a call. How can I help you today?"
-        />
-      )}
     </SafeAreaView>
   );
 }

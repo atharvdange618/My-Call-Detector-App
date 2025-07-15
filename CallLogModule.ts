@@ -1,4 +1,5 @@
 import { NativeModules, NativeEventEmitter } from 'react-native';
+import type { EmitterSubscription } from 'react-native';
 import { CallLogEntry } from './hooks/types';
 
 const { CallLogModule } = NativeModules;
@@ -10,7 +11,16 @@ const emitter = new NativeEventEmitter(CallLogModule);
 
 export const subscribeToCallUpdates = (
   callback: (data: CallLogEntry) => void,
-) => {
-  const listener = emitter.addListener('CallLogUpdated', callback);
-  return () => listener.remove();
+): (() => void) => {
+  CallLogModule.addListener('CallLogUpdated');
+
+  const listener: EmitterSubscription = emitter.addListener(
+    'CallLogUpdated',
+    callback,
+  );
+
+  return () => {
+    listener.remove();
+    CallLogModule.removeListeners(1);
+  };
 };

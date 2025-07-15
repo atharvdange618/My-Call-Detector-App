@@ -74,8 +74,6 @@ class CallLogMonitorService : Service() {
                             Log.d(TAG, "Sending broadcast: CALL_LOG_UPDATE")
                             sendBroadcast(intent)
                             Log.d(TAG, "Broadcast sent.")
-
-                            
                         } else {
                             Log.d(TAG, "No new call detected. Current lastTimestamp: $lastTimestamp")
                         }
