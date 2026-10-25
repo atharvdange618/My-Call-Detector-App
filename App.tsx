@@ -19,6 +19,8 @@ import {
   AppState,
   Platform,
   Linking,
+  Image,
+  PermissionsAndroid,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useCallLogMonitor } from './hooks/useCallLogMonitor';
@@ -65,6 +67,7 @@ export default function App() {
 
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
   const isInitializedRef = useRef(false);
+  const contactsRequestedRef = useRef(false);
 
   const statusColor = useMemo(() => {
     if (
@@ -177,6 +180,14 @@ export default function App() {
       });
       if (Platform.OS === 'android') {
         await createNotificationChannel();
+      }
+      // Contacts only add names and photos to history, so ask once per launch
+      // and ignore the result. Monitoring works either way.
+      if (!contactsRequestedRef.current) {
+        contactsRequestedRef.current = true;
+        await PermissionsAndroid.request(
+          PermissionsAndroid.PERMISSIONS.READ_CONTACTS,
+        );
       }
       return true;
     } else {
@@ -593,7 +604,15 @@ export default function App() {
                       <Text style={styles.callDuration}>{call.duration}s</Text>
                     </View>
 
-                    <Text style={styles.callNumber}>{call.number}</Text>
+                    <View style={styles.callContact}>
+                      <CallAvatar name={call.name} photoUri={call.photoUri} />
+                      <View style={styles.callContactText}>
+                        {call.name ? (
+                          <Text style={styles.callName}>{call.name}</Text>
+                        ) : null}
+                        <Text style={styles.callNumber}>{call.number}</Text>
+                      </View>
+                    </View>
                     <Text style={styles.callTime}>
                       {formatTimestamp(call.timestamp)}
                     </Text>
@@ -613,6 +632,35 @@ export default function App() {
         </View>
       </ScrollView>
     </SafeAreaView>
+  );
+}
+
+interface CallAvatarProps {
+  name?: string | null;
+  photoUri?: string | null;
+}
+
+// Falls back to the name's initial when there's no photo or it fails to load,
+// e.g. after the contact was deleted.
+function CallAvatar({ name, photoUri }: CallAvatarProps) {
+  const [photoFailed, setPhotoFailed] = useState(false);
+
+  if (photoUri && !photoFailed) {
+    return (
+      <Image
+        source={{ uri: photoUri }}
+        style={styles.avatar}
+        onError={() => setPhotoFailed(true)}
+      />
+    );
+  }
+
+  return (
+    <View style={styles.avatar}>
+      <Text style={styles.avatarInitial}>
+        {name ? name.charAt(0).toUpperCase() : '#'}
+      </Text>
+    </View>
   );
 }
 
@@ -812,6 +860,33 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#6c757d',
     fontWeight: '500',
+  },
+  callContact: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 4,
+  },
+  callContactText: {
+    flex: 1,
+  },
+  avatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#3498db',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarInitial: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#ffffff',
+  },
+  callName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#2c3e50',
   },
   callNumber: {
     fontSize: 18,

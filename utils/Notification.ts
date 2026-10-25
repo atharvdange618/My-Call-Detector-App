@@ -1,7 +1,5 @@
 import { AnalyzedCall } from '../hooks/types';
-import notifee, {
-  AndroidImportance,
-} from '@notifee/react-native';
+import notifee, { AndroidImportance } from '@notifee/react-native';
 
 export const CHANNEL_ID = 'call_monitor_channel';
 
@@ -40,7 +38,11 @@ export async function displayClientCheckNotification(call: AnalyzedCall) {
   await notifee.displayNotification({
     id: notificationId,
     title: '📞 Recent Call Processed',
-    body: `Was the person at ${call.number} a client? Do you want to send a template message to them?`,
+    body: `Was ${
+      call.name
+        ? `${call.name} (${call.number})`
+        : `the person at ${call.number}`
+    } a client? Do you want to send a template message to them?`,
     data: {
       callData: JSON.stringify(call),
       notificationStage: 'messagePrompt',

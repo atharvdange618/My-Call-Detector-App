@@ -47,8 +47,11 @@ class CallLogModule(private val reactContext: ReactApplicationContext) :
             for (call in CallLogHelper.getCallsAfter(reactContext, lastDeliveredId, notBefore)) {
                 // Private numbers have nothing to message, so skip them but still move past them.
                 if (call.number.isNotBlank()) {
+                    val contact = findContact(call.number)
                     val params = Arguments.createMap().apply {
                         putString("number", call.number)
+                        putString("name", contact?.name ?: call.cachedName)
+                        putString("photoUri", contact?.photoUri)
                         putInt("type", call.type)
                         putDouble("duration", call.duration.toDouble())
                         putDouble("timestamp", call.timestamp.toDouble())
@@ -64,6 +67,19 @@ class CallLogModule(private val reactContext: ReactApplicationContext) :
             Log.e(TAG, "SecurityException: READ_CALL_LOG permission denied. Cannot read call log.", e)
         } catch (e: Exception) {
             Log.e(TAG, "Error delivering calls to JS: ${e.message}", e)
+        }
+    }
+
+    // READ_CONTACTS is optional, and a failed lookup must not stop the call from being delivered.
+    private fun findContact(number: String): ContactInfo? {
+        val granted = ContextCompat.checkSelfPermission(reactContext, android.Manifest.permission.READ_CONTACTS) ==
+            PackageManager.PERMISSION_GRANTED
+        if (!granted) return null
+        return try {
+            CallLogHelper.lookupContact(reactContext, number)
+        } catch (e: Exception) {
+            Log.e(TAG, "Contact lookup failed: ${e.message}", e)
+            null
         }
     }
 

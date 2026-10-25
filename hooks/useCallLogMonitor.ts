@@ -30,6 +30,8 @@ export function useCallLogMonitor({ onCallDetected }: any) {
           type: entry.type,
           duration: entry.duration,
           timestamp: entry.timestamp,
+          name: entry.name ?? null,
+          photoUri: entry.photoUri ?? null,
         };
 
         if (

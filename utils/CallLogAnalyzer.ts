@@ -33,5 +33,7 @@ export function analyzeCallLogEntry(entry: CallLogEntry): AnalyzedCall | null {
     number: entry.number,
     duration: entry.duration,
     timestamp: entry.timestamp,
+    name: entry.name,
+    photoUri: entry.photoUri,
   };
 }

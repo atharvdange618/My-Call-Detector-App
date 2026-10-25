@@ -2,7 +2,9 @@ package com.mycalldetectorapp
 
 import android.content.Context
 import android.database.Cursor
+import android.net.Uri
 import android.provider.CallLog
+import android.provider.ContactsContract
 import android.util.Log
 
 /**
@@ -12,13 +14,25 @@ import android.util.Log
  * @param type The type of call (e.g., incoming, outgoing, missed).
  * @param duration The duration of the call in seconds.
  * @param timestamp The timestamp of the call in milliseconds.
+ * @param cachedName The contact name the dialer cached on the row, if it filled one in.
  */
 data class CallEntry(
     val id: Long,
     val number: String,
     val type: Int,
     val duration: Long,
-    val timestamp: Long
+    val timestamp: Long,
+    val cachedName: String?
+)
+
+/**
+ * A contact matched to a phone number.
+ * @param name The contact's display name.
+ * @param photoUri A content:// URI for the contact's thumbnail, or null if it has none.
+ */
+data class ContactInfo(
+    val name: String?,
+    val photoUri: String?
 )
 
 /**
@@ -31,10 +45,12 @@ object CallLogHelper {
         CallLog.Calls.NUMBER,
         CallLog.Calls.TYPE,
         CallLog.Calls.DATE,
-        CallLog.Calls.DURATION
+        CallLog.Calls.DURATION,
+        CallLog.Calls.CACHED_NAME
     )
 
     private fun Cursor.toCallEntry() = CallEntry(
+        cachedName = getString(getColumnIndexOrThrow(CallLog.Calls.CACHED_NAME))?.takeIf { it.isNotBlank() },
         id = getLong(getColumnIndexOrThrow(CallLog.Calls._ID)),
         number = getString(getColumnIndexOrThrow(CallLog.Calls.NUMBER)) ?: "",
         type = getInt(getColumnIndexOrThrow(CallLog.Calls.TYPE)),
@@ -80,6 +96,32 @@ object CallLogHelper {
             while (it.moveToNext()) calls.add(it.toCallEntry())
         }
         return calls
+    }
+
+    /**
+     * Looks up the contact for a phone number. PhoneLookup matches across number formats,
+     * so "+91 98..." and "098..." find the same contact. Requires READ_CONTACTS permission.
+     * @param context The application context.
+     * @param number The phone number to look up.
+     * @return The matching contact, or null if the number isn't in contacts.
+     */
+    fun lookupContact(context: Context, number: String): ContactInfo? {
+        val uri = Uri.withAppendedPath(ContactsContract.PhoneLookup.CONTENT_FILTER_URI, Uri.encode(number))
+        context.contentResolver.query(
+            uri,
+            arrayOf(ContactsContract.PhoneLookup.DISPLAY_NAME, ContactsContract.PhoneLookup.PHOTO_THUMBNAIL_URI),
+            null,
+            null,
+            null
+        )?.use {
+            if (it.moveToFirst()) {
+                return ContactInfo(
+                    name = it.getString(0),
+                    photoUri = it.getString(1)
+                )
+            }
+        }
+        return null
     }
 
     /**
