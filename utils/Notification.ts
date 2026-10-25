@@ -1,6 +1,5 @@
 import { AnalyzedCall } from '../hooks/types';
 import notifee, {
-  AndroidCategory,
   AndroidImportance,
 } from '@notifee/react-native';
 
@@ -14,7 +13,6 @@ export const CHANNEL_ID = 'call_monitor_channel';
  * - Importance: AndroidImportance.HIGH
  * - Sound: 'default'
  * - Vibration: true
- * - Category: AndroidCategory.CALL
  * @returns Promise that resolves when the notification channel is created.
  */
 export async function createNotificationChannel() {
@@ -24,7 +22,6 @@ export async function createNotificationChannel() {
     importance: AndroidImportance.HIGH,
     sound: 'default',
     vibration: true,
-    category: AndroidCategory.CALL,
   });
 }
 

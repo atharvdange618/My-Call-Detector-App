@@ -375,7 +375,7 @@ export default function App() {
     const unsubscribe = notifee.onForegroundEvent(async ({ type, detail }) => {
       const { notification, pressAction } = detail;
 
-      if (!notification || !pressAction) return;
+      if (!notification?.id || !pressAction) return;
 
       const callDataString = notification.data?.callData as string;
 
