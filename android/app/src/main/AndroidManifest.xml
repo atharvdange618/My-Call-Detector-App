@@ -7,7 +7,7 @@
   <uses-permission android:name="android.permission.READ_PHONE_NUMBERS" />
 
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_PHONE_CALL" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
   <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
   <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
@@ -52,7 +52,11 @@
     <service
       android:name=".CallLogMonitorService"
       android:exported="false"
-      android:foregroundServiceType="phoneCall" />
+      android:foregroundServiceType="specialUse">
+      <property
+        android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+        android:value="Watches the call log so the app can prompt the user to message a caller on WhatsApp right after each call ends." />
+    </service>
 
   </application>
 </manifest>

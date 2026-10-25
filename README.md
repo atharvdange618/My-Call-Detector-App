@@ -70,7 +70,7 @@ The app requires the following permissions to function correctly:
 - `READ_PHONE_STATE`: To detect incoming calls.
 - `READ_PHONE_NUMBERS`: To access phone numbers associated with calls.
 - `FOREGROUND_SERVICE`: To run the call monitoring service in the background.
-- `FOREGROUND_SERVICE_PHONE_CALL`: Specific foreground service type for phone calls (API 34+).
+- `FOREGROUND_SERVICE_SPECIAL_USE`: Foreground service type for the call log monitor (API 34+).
 - `POST_NOTIFICATIONS`: To display a notification when the app is running in the background (required for Android 13 and above).
 
 The app will request these permissions from the user when it's first launched.

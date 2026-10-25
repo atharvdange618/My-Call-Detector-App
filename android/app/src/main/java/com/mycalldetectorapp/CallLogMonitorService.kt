@@ -11,7 +11,7 @@ import android.os.IBinder
 import android.provider.CallLog
 import android.util.Log
 import androidx.core.app.NotificationCompat
-import android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL
+import android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
 
 class CallLogMonitorService : Service() {
 
@@ -34,7 +34,7 @@ class CallLogMonitorService : Service() {
                 .build()
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                startForeground(101, notification, FOREGROUND_SERVICE_TYPE_PHONE_CALL)
+                startForeground(101, notification, FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
             } else {
                 startForeground(101, notification)
             }
