@@ -6,8 +6,8 @@ import android.content.Intent
 import android.database.ContentObserver
 import android.os.Build
 import android.os.Handler
-import android.os.HandlerThread
 import android.os.IBinder
+import android.os.Looper
 import android.provider.CallLog
 import android.util.Log
 import androidx.core.app.NotificationCompat
@@ -15,8 +15,6 @@ import android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
 
 class CallLogMonitorService : Service() {
 
-    private var lastTimestamp: Long = 0L
-    private lateinit var observerThread: HandlerThread
     private lateinit var callLogObserver: ContentObserver
     private val TAG = "CallLogMonitorService"
 
@@ -42,22 +40,13 @@ class CallLogMonitorService : Service() {
             Log.e(TAG, "Error starting foreground service: ${e.message}", e)
         }
 
-       try {
-            lastTimestamp = CallLogHelper.getLastCall(this)?.timestamp ?: 0L
-        } catch (e: IllegalArgumentException) {
-            Log.e(TAG, "IllegalArgumentException when getting last call in onCreate: ${e.message}", e)
-        } catch (e: SecurityException) {
-            Log.e(TAG, "SecurityException: READ_CALL_LOG permission denied. Cannot access call log.", e)
-        } catch (e: Exception) {
-            Log.e(TAG, "Unexpected exception when getting last call in onCreate: ${e.message}", e)
-        }
-
-        // Callbacks run one at a time on this thread, so the timestamp check in
-        // checkForNewCall can't race when the provider fires several changes per call.
-        observerThread = HandlerThread("CallLogObserver").apply { start() }
-        callLogObserver = object : ContentObserver(Handler(observerThread.looper)) {
+        callLogObserver = object : ContentObserver(Handler(Looper.getMainLooper())) {
             override fun onChange(selfChange: Boolean) {
-                checkForNewCall()
+                // CallLogModule reads the new rows and tracks which ones JS has seen.
+                Log.d(TAG, "Call log changed.")
+                val intent = Intent("com.mycalldetectorapp.CALL_LOG_UPDATE")
+                intent.setPackage(applicationContext.packageName)
+                sendBroadcast(intent)
             }
         }
         try {
@@ -67,38 +56,8 @@ class CallLogMonitorService : Service() {
         }
     }
 
-    private fun checkForNewCall() {
-        try {
-            val latestCall = CallLogHelper.getLastCall(this)
-            latestCall?.let {
-                if (it.timestamp > lastTimestamp) {
-                    lastTimestamp = it.timestamp
-                    val typeLabelForLog = CallLogHelper.getCallTypeLabel(it.type)
-                    Log.d(TAG, "New $typeLabelForLog call detected. timestamp: ${it.timestamp}")
-
-                    val intent = Intent("com.mycalldetectorapp.CALL_LOG_UPDATE")
-                    intent.setPackage(applicationContext.packageName)
-                    intent.putExtra("number", it.number)
-                    intent.putExtra("type", it.type)
-                    intent.putExtra("duration", it.duration)
-                    intent.putExtra("timestamp", it.timestamp)
-                    sendBroadcast(intent)
-                } else {
-                    Log.d(TAG, "No new call detected. Current lastTimestamp: $lastTimestamp")
-                }
-            } ?: run {
-                Log.d(TAG, "No calls found in the log yet.")
-            }
-        } catch (e: SecurityException) {
-            Log.e(TAG, "SecurityException in checkForNewCall: READ_CALL_LOG permission denied. Cannot access call log.", e)
-        } catch (e: Exception) {
-            Log.e(TAG, "Exception in checkForNewCall: ${e.message}", e)
-        }
-    }
-
     override fun onDestroy() {
         contentResolver.unregisterContentObserver(callLogObserver)
-        observerThread.quitSafely()
         super.onDestroy()
     }
 

@@ -7,12 +7,14 @@ import android.util.Log
 
 /**
  * Data class to represent a single call entry from the call log.
- * @param number The phone number associated with the call.
+ * @param id The call log row ID. The provider assigns these in insertion order.
+ * @param number The phone number associated with the call. Empty for private numbers.
  * @param type The type of call (e.g., incoming, outgoing, missed).
  * @param duration The duration of the call in seconds.
  * @param timestamp The timestamp of the call in milliseconds.
  */
 data class CallEntry(
+    val id: Long,
     val number: String,
     val type: Int,
     val duration: Long,
@@ -24,40 +26,60 @@ data class CallEntry(
  */
 object CallLogHelper {
 
+    private val projection = arrayOf(
+        CallLog.Calls._ID,
+        CallLog.Calls.NUMBER,
+        CallLog.Calls.TYPE,
+        CallLog.Calls.DATE,
+        CallLog.Calls.DURATION
+    )
+
+    private fun Cursor.toCallEntry() = CallEntry(
+        id = getLong(getColumnIndexOrThrow(CallLog.Calls._ID)),
+        number = getString(getColumnIndexOrThrow(CallLog.Calls.NUMBER)) ?: "",
+        type = getInt(getColumnIndexOrThrow(CallLog.Calls.TYPE)),
+        timestamp = getLong(getColumnIndexOrThrow(CallLog.Calls.DATE)),
+        duration = getLong(getColumnIndexOrThrow(CallLog.Calls.DURATION))
+    )
+
     /**
-     * Retrieves the last (most recent) call entry from the device's call log.
+     * Retrieves the most recently inserted call entry from the device's call log.
      * Requires READ_CALL_LOG permission.
      * @param context The application context.
-     * @return The most recent CallEntry object, or null if no calls are found or an error occurs.
+     * @return The newest CallEntry object, or null if no calls are found.
      */
     fun getLastCall(context: Context): CallEntry? {
-        val projection = arrayOf(
-            CallLog.Calls.NUMBER,
-            CallLog.Calls.TYPE,
-            CallLog.Calls.DATE,
-            CallLog.Calls.DURATION
-        )
-
-        // Query the Call Log content provider.
-        val cursor: Cursor? = context.contentResolver.query(
-            CallLog.Calls.CONTENT_URI, // The URI for the call log.
-            projection,                // The columns to return.
-            null,                      // No WHERE clause (return all calls).
-            null,                      // No WHERE clause arguments.
-            "${CallLog.Calls.DATE} DESC" // Order by date descending.
-        )
-
-        cursor?.use {
-            if (it.moveToFirst()) {
-                return CallEntry(
-                    number = it.getString(it.getColumnIndexOrThrow(CallLog.Calls.NUMBER)),
-                    type = it.getInt(it.getColumnIndexOrThrow(CallLog.Calls.TYPE)),
-                    timestamp = it.getLong(it.getColumnIndexOrThrow(CallLog.Calls.DATE)),
-                    duration = it.getLong(it.getColumnIndexOrThrow(CallLog.Calls.DURATION))
-                )
-            }
+        context.contentResolver.query(
+            CallLog.Calls.CONTENT_URI,
+            projection,
+            null,
+            null,
+            "${CallLog.Calls._ID} DESC"
+        )?.use {
+            if (it.moveToFirst()) return it.toCallEntry()
         }
         return null
+    }
+
+    /**
+     * Retrieves calls inserted after the given row ID that started at or after notBefore,
+     * oldest first. Requires READ_CALL_LOG permission.
+     * @param context The application context.
+     * @param afterId Only rows with a larger _ID are returned.
+     * @param notBefore Only calls whose DATE is at or after this time (ms) are returned.
+     */
+    fun getCallsAfter(context: Context, afterId: Long, notBefore: Long): List<CallEntry> {
+        val calls = mutableListOf<CallEntry>()
+        context.contentResolver.query(
+            CallLog.Calls.CONTENT_URI,
+            projection,
+            "${CallLog.Calls._ID} > ? AND ${CallLog.Calls.DATE} >= ?",
+            arrayOf(afterId.toString(), notBefore.toString()),
+            "${CallLog.Calls._ID} ASC"
+        )?.use {
+            while (it.moveToNext()) calls.add(it.toCallEntry())
+        }
+        return calls
     }
 
     /**

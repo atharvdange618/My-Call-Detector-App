@@ -15,31 +15,55 @@ class CallLogModule(private val reactContext: ReactApplicationContext) :
 
     private val TAG = "CallLogModule"
 
+    private val KEY_LAST_DELIVERED_ID = "lastDeliveredId"
+    private val REPLAY_WINDOW_MS = 24 * 60 * 60 * 1000L
+
     private var listenerCount = 0
+    private val prefs = reactContext.getSharedPreferences("call_log_cursor", Context.MODE_PRIVATE)
 
     private val callLogUpdateReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent?.action == "com.mycalldetectorapp.CALL_LOG_UPDATE") {
-                val number = intent.getStringExtra("number")
-                val type = intent.getIntExtra("type", 0)
-                val duration = intent.getLongExtra("duration", 0L)
-                val timestamp = intent.getLongExtra("timestamp", 0L)
+                deliverPendingCalls()
+            }
+        }
+    }
 
-                val params = Arguments.createMap().apply {
-                    putString("number", number)
-                    putInt("type", type)
-                    putDouble("duration", duration.toDouble())
-                    putDouble("timestamp", timestamp.toDouble())
-                }
+    // The saved ID only moves past a call once it has been emitted to JS, so calls that
+    // land while nothing is listening get replayed when JS subscribes. Synchronized because
+    // addListener and the receiver run on different threads.
+    @Synchronized
+    private fun deliverPendingCalls() {
+        try {
+            if (!prefs.contains(KEY_LAST_DELIVERED_ID)) {
+                // First run: start from the newest call instead of replaying the whole log.
+                val newestId = CallLogHelper.getLastCall(reactContext)?.id ?: 0L
+                prefs.edit().putLong(KEY_LAST_DELIVERED_ID, newestId).apply()
+                return
+            }
 
-                try {
+            val lastDeliveredId = prefs.getLong(KEY_LAST_DELIVERED_ID, 0L)
+            val notBefore = System.currentTimeMillis() - REPLAY_WINDOW_MS
+            for (call in CallLogHelper.getCallsAfter(reactContext, lastDeliveredId, notBefore)) {
+                // Private numbers have nothing to message, so skip them but still move past them.
+                if (call.number.isNotBlank()) {
+                    val params = Arguments.createMap().apply {
+                        putString("number", call.number)
+                        putInt("type", call.type)
+                        putDouble("duration", call.duration.toDouble())
+                        putDouble("timestamp", call.timestamp.toDouble())
+                    }
                     reactContext
                         .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
                         .emit("CallLogUpdated", params)
-                } catch (e: Exception) {
-                    Log.e(TAG, "Error emitting CallLogUpdated event to JS: ${e.message}", e)
+                    Log.d(TAG, "Delivered ${CallLogHelper.getCallTypeLabel(call.type)} call id: ${call.id}")
                 }
+                prefs.edit().putLong(KEY_LAST_DELIVERED_ID, call.id).apply()
             }
+        } catch (e: SecurityException) {
+            Log.e(TAG, "SecurityException: READ_CALL_LOG permission denied. Cannot read call log.", e)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error delivering calls to JS: ${e.message}", e)
         }
     }
 
@@ -61,6 +85,7 @@ class CallLogModule(private val reactContext: ReactApplicationContext) :
             }
         }
         listenerCount++
+        deliverPendingCalls()
     }
 
     @ReactMethod
