@@ -3,17 +3,21 @@ package com.mycalldetectorapp
 import android.app.*
 import android.content.Context
 import android.content.Intent
+import android.database.ContentObserver
 import android.os.Build
+import android.os.Handler
+import android.os.HandlerThread
 import android.os.IBinder
+import android.provider.CallLog
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL
-import java.util.*
 
 class CallLogMonitorService : Service() {
 
     private var lastTimestamp: Long = 0L
-    private val timer = Timer()
+    private lateinit var observerThread: HandlerThread
+    private lateinit var callLogObserver: ContentObserver
     private val TAG = "CallLogMonitorService"
 
     override fun onCreate() {
@@ -48,40 +52,54 @@ class CallLogMonitorService : Service() {
             Log.e(TAG, "Unexpected exception when getting last call in onCreate: ${e.message}", e)
         }
 
-        timer.scheduleAtFixedRate(object : TimerTask() {
-            override fun run() {
-                try {
-                    val latestCall = CallLogHelper.getLastCall(this@CallLogMonitorService)
-                    latestCall?.let {
-                        if (it.timestamp > lastTimestamp) {
-                            lastTimestamp = it.timestamp
-                            val typeLabelForLog = CallLogHelper.getCallTypeLabel(it.type)
-
-                            val intent = Intent("com.mycalldetectorapp.CALL_LOG_UPDATE")
-                            intent.setPackage(applicationContext.packageName)
-                            intent.putExtra("number", it.number)
-                            intent.putExtra("type", it.type)
-                            intent.putExtra("duration", it.duration)
-                            intent.putExtra("timestamp", it.timestamp)
-                            sendBroadcast(intent)
-                        } else {
-                            Log.d(TAG, "No new call detected. Current lastTimestamp: $lastTimestamp")
-                        }
-                    } ?: run {
-                        Log.d(TAG, "No calls found in the log yet.")
-                    }
-                } catch (e: SecurityException) {
-                    Log.e(TAG, "SecurityException in TimerTask: READ_CALL_LOG permission denied. Cannot access call log.", e)
-                } catch (e: Exception) {
-                    Log.e(TAG, "Exception in TimerTask: ${e.message}", e)
-                }
+        // Callbacks run one at a time on this thread, so the timestamp check in
+        // checkForNewCall can't race when the provider fires several changes per call.
+        observerThread = HandlerThread("CallLogObserver").apply { start() }
+        callLogObserver = object : ContentObserver(Handler(observerThread.looper)) {
+            override fun onChange(selfChange: Boolean) {
+                checkForNewCall()
             }
-        }, 0, 5000) // Poll every 5 seconds
+        }
+        try {
+            contentResolver.registerContentObserver(CallLog.Calls.CONTENT_URI, true, callLogObserver)
+        } catch (e: SecurityException) {
+            Log.e(TAG, "SecurityException: READ_CALL_LOG permission denied. Cannot observe call log.", e)
+        }
+    }
+
+    private fun checkForNewCall() {
+        try {
+            val latestCall = CallLogHelper.getLastCall(this)
+            latestCall?.let {
+                if (it.timestamp > lastTimestamp) {
+                    lastTimestamp = it.timestamp
+                    val typeLabelForLog = CallLogHelper.getCallTypeLabel(it.type)
+                    Log.d(TAG, "New $typeLabelForLog call detected. timestamp: ${it.timestamp}")
+
+                    val intent = Intent("com.mycalldetectorapp.CALL_LOG_UPDATE")
+                    intent.setPackage(applicationContext.packageName)
+                    intent.putExtra("number", it.number)
+                    intent.putExtra("type", it.type)
+                    intent.putExtra("duration", it.duration)
+                    intent.putExtra("timestamp", it.timestamp)
+                    sendBroadcast(intent)
+                } else {
+                    Log.d(TAG, "No new call detected. Current lastTimestamp: $lastTimestamp")
+                }
+            } ?: run {
+                Log.d(TAG, "No calls found in the log yet.")
+            }
+        } catch (e: SecurityException) {
+            Log.e(TAG, "SecurityException in checkForNewCall: READ_CALL_LOG permission denied. Cannot access call log.", e)
+        } catch (e: Exception) {
+            Log.e(TAG, "Exception in checkForNewCall: ${e.message}", e)
+        }
     }
 
     override fun onDestroy() {
+        contentResolver.unregisterContentObserver(callLogObserver)
+        observerThread.quitSafely()
         super.onDestroy()
-        timer.cancel()
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
