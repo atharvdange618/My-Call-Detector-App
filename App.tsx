@@ -260,6 +260,8 @@ export default function App() {
         appStateRef.current.match(/inactive|background/) &&
         nextAppState === 'active'
       ) {
+        // Calls saved by the headless handler in index.js only exist in storage.
+        await loadCallHistory();
         const granted = await handlePermissionRequest();
 
         if (granted) {
@@ -282,7 +284,12 @@ export default function App() {
       handleAppStateChange,
     );
     return () => subscription?.remove();
-  }, [handlePermissionRequest, appState.isMonitoring, updateAppState]);
+  }, [
+    handlePermissionRequest,
+    appState.isMonitoring,
+    updateAppState,
+    loadCallHistory,
+  ]);
 
   useEffect(() => {
     switch (corePermissionStatus) {
